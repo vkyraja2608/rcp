@@ -26,7 +26,7 @@
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
         
         .glass-panel {
-            background: rgba(15, 23, 42, 0.95); /* Slightly more opaque for readability */
+            background: rgba(15, 23, 42, 0.95); 
             backdrop-filter: blur(8px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
@@ -48,9 +48,34 @@
             box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
         }
 
+        /* Checkbox styling */
+        .vis-checkbox {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #475569;
+            border-radius: 4px;
+            background: rgba(15, 23, 42, 0.5);
+            cursor: pointer;
+            position: relative;
+            vertical-align: middle;
+        }
+        .vis-checkbox:checked {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        .vis-checkbox:checked::after {
+            content: '✔';
+            font-size: 10px;
+            color: white;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
         .math-font { font-family: 'Times New Roman', serif; font-style: italic; }
 
-        /* Mobile transition for collapsing sidebar */
         #sidebar-content {
             transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
             overflow: hidden;
@@ -71,25 +96,38 @@
         <!-- Controls Container -->
         <div id="main-panel" class="pointer-events-auto glass-panel rounded-xl w-full max-w-sm flex flex-col transition-all duration-300">
             
-            <!-- Header (Always Visible) -->
+            <!-- Header -->
             <div class="flex justify-between items-center p-4 bg-slate-900/50 rounded-t-xl cursor-pointer" onclick="toggleSidebar()">
                 <div>
                     <h1 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">Linear Systems</h1>
                     <p class="text-[10px] text-slate-400">Strang's Row vs Column</p>
                 </div>
-                <!-- Mobile Toggle Icon -->
                 <button class="text-slate-400 hover:text-white transition-colors p-2">
                     <i id="chevron-icon" class="fas fa-chevron-up transform transition-transform duration-300"></i>
                 </button>
             </div>
 
-            <!-- Scrollable Content (Collapsible) -->
+            <!-- Scrollable Content -->
             <div id="sidebar-content" class="px-4 pb-4 max-h-[60vh] md:max-h-[80vh] overflow-y-auto space-y-4">
                 
-                <!-- View Toggle -->
+                <!-- Dimension Toggle -->
                 <div class="grid grid-cols-2 gap-2 bg-slate-800 p-1 rounded-lg mt-2">
+                    <button id="btn-2d" onclick="setDimension(2); event.stopPropagation();" class="toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide text-slate-400">2D System</button>
+                    <button id="btn-3d" onclick="setDimension(3); event.stopPropagation();" class="toggle-btn active py-2 rounded-md text-xs font-bold uppercase tracking-wide">3D System</button>
+                </div>
+
+                <!-- View Toggle -->
+                <div class="grid grid-cols-2 gap-2 bg-slate-800 p-1 rounded-lg">
                     <button id="btn-row" onclick="setMode('row'); event.stopPropagation();" class="toggle-btn active py-2 rounded-md text-xs font-bold uppercase tracking-wide">Row Pic</button>
                     <button id="btn-col" onclick="setMode('col'); event.stopPropagation();" class="toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide text-slate-400">Col Pic</button>
+                </div>
+
+                <!-- Visibility Controls -->
+                <div class="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
+                    <h3 class="text-[10px] font-bold text-slate-400 uppercase mb-2">Visibility</h3>
+                    <div id="visibility-container" class="grid grid-cols-2 gap-2 text-xs">
+                        <!-- Injected by JS -->
+                    </div>
                 </div>
 
                 <!-- Animation & Tools Controls -->
@@ -105,14 +143,17 @@
                 <div class="space-y-2">
                     <div class="flex justify-between items-center">
                         <h2 class="text-xs font-bold text-slate-400 uppercase">System (Ax = b)</h2>
-                        <button onclick="resetToDefault(); event.stopPropagation();" class="text-[10px] text-blue-400 underline">Reset</button>
+                        <div class="flex gap-2">
+                            <button onclick="randomizeSystem(); event.stopPropagation();" class="text-[10px] text-emerald-400 underline">Random</button>
+                            <button onclick="resetToDefault(); event.stopPropagation();" class="text-[10px] text-blue-400 underline">Reset</button>
+                        </div>
                     </div>
                     <div id="matrix-inputs" class="space-y-1 text-xs"></div>
                 </div>
 
                 <!-- Solution Display -->
                 <div class="bg-slate-800/80 p-3 rounded-lg text-center border border-slate-700">
-                    <div class="text-[10px] text-slate-500 uppercase mb-1">Solution (u, v, w)</div>
+                    <div class="text-[10px] text-slate-500 uppercase mb-1">Solution</div>
                     <div id="solution-display" class="font-mono text-emerald-400 text-base font-bold">Computing...</div>
                 </div>
 
@@ -123,7 +164,7 @@
             </div>
         </div>
 
-        <!-- Mode Indicator (Floating Top Right, Hidden on tiny screens if needed) -->
+        <!-- Mode Indicator -->
         <div class="absolute top-4 right-4 pointer-events-none hidden md:block">
             <div class="glass-panel px-4 py-2 rounded-lg text-right">
                 <div id="mode-title-overlay" class="text-sm font-bold text-white">Row Picture</div>
@@ -132,8 +173,13 @@
     </div>
 
     <script>
-        // --- UI Logic for Mobile ---
+        // --- UI Logic ---
         let isSidebarOpen = true;
+        let currentDim = 3;
+        let visibilityState = {
+            row: [true, true, true],
+            col: [true, true, true, true, true] 
+        };
         
         function toggleSidebar() {
             const panel = document.getElementById('main-panel');
@@ -145,7 +191,6 @@
             if (isSidebarOpen) {
                 panel.classList.remove('collapsed');
                 icon.style.transform = 'rotate(0deg)';
-                // On mobile, maximize opacity/height
                 content.style.maxHeight = window.innerWidth < 768 ? '60vh' : '80vh';
                 content.style.opacity = '1';
                 content.style.paddingBottom = '1rem';
@@ -158,25 +203,124 @@
             }
         }
 
-        // Auto-collapse on small screens initially
-        if (window.innerWidth < 768) {
-            toggleSidebar(); 
+        if (window.innerWidth < 768) toggleSidebar(); 
+
+        function renderVisibilityControls() {
+            const container = document.getElementById('visibility-container');
+            container.innerHTML = '';
+            
+            const colors = ['#ef4444', '#22c55e', '#3b82f6', '#facc15', '#cbd5e1'];
+            
+            const numEqs = currentDim;
+            
+            if (mode === 'row') {
+                for (let i = 0; i < numEqs; i++) {
+                    const label = `Eq ${i+1} (${i===0?'Red':i===1?'Green':'Blue'})`;
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2';
+                    div.innerHTML = `
+                        <input type="checkbox" class="vis-checkbox" ${visibilityState.row[i] ? 'checked' : ''} onchange="toggleVis('row', ${i})">
+                        <span style="color: ${colors[i]}" class="font-medium">${label}</span>
+                    `;
+                    container.appendChild(div);
+                }
+            } else {
+                // Cols
+                for (let i = 0; i < numEqs; i++) {
+                    const label = `Col ${i+1} (${i===0?'Red':i===1?'Green':'Blue'})`;
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2';
+                    div.innerHTML = `
+                        <input type="checkbox" class="vis-checkbox" ${visibilityState.col[i] ? 'checked' : ''} onchange="toggleVis('col', ${i})">
+                        <span style="color: ${colors[i]}" class="font-medium">${label}</span>
+                    `;
+                    container.appendChild(div);
+                }
+                // Result & Volume
+                ['Result (Yellow)', currentDim === 2 ? 'Parallelogram' : 'Spanned Volume'].forEach((label, idx) => {
+                    const i = numEqs + idx; // Offset index
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2';
+                    div.innerHTML = `
+                        <input type="checkbox" class="vis-checkbox" ${visibilityState.col[i] ? 'checked' : ''} onchange="toggleVis('col', ${i})">
+                        <span style="color: ${colors[numEqs + idx]}" class="font-medium">${label}</span>
+                    `;
+                    container.appendChild(div);
+                });
+            }
         }
 
-        // --- Linear Algebra Logic ---
-        const defaultMatrix = [[2, 1, 1, 5], [4, -6, 0, -2], [-2, 7, 2, 9]];
-        let matrix = JSON.parse(JSON.stringify(defaultMatrix));
+        function toggleVis(type, index) {
+            visibilityState[type][index] = !visibilityState[type][index];
+            updateScene(animationTime);
+        }
+
+        // --- Math Logic ---
+        const defaultMatrix3D = [[2, 1, 1, 5], [4, -6, 0, -2], [-2, 7, 2, 9]];
+        const defaultMatrix2D = [[1, 2, 4], [3, -1, 5]]; 
+
+        let matrix = JSON.parse(JSON.stringify(defaultMatrix3D));
         let solution = { u: 0, v: 0, w: 0, valid: false };
+
+        function getRandomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function randomizeSystem() {
+            const n = currentDim;
+            // Generate a random integer solution first to ensure clean results
+            const sol = [];
+            for(let i=0; i<n; i++) sol.push(getRandomInt(-3, 3));
+            
+            // Generate random coefficients and calculate b
+            const newMatrix = [];
+            for(let i=0; i<n; i++) {
+                const row = [];
+                let b = 0;
+                for(let j=0; j<n; j++) {
+                    const coeff = getRandomInt(-5, 5);
+                    row.push(coeff);
+                    b += coeff * sol[j];
+                }
+                row.push(b);
+                newMatrix.push(row);
+            }
+            matrix = newMatrix;
+            generateInputs();
+            solveSystem();
+            initVisuals();
+            resetAnimation();
+        }
+
+        function setDimension(d) {
+            currentDim = d;
+            document.getElementById('btn-2d').className = `toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide ${d===2?'active':'text-slate-400'}`;
+            document.getElementById('btn-3d').className = `toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide ${d===3?'active':'text-slate-400'}`;
+            
+            if(d === 2) {
+                randomizeSystem(); 
+            } else {
+                matrix = JSON.parse(JSON.stringify(defaultMatrix3D));
+                generateInputs();
+                solveSystem();
+                initVisuals();
+                resetAnimation();
+            }
+
+            renderVisibilityControls();
+        }
 
         function solveSystem() {
             let M = JSON.parse(JSON.stringify(matrix));
-            const n = 3;
+            const n = currentDim;
             // Forward Elimination
             for (let i = 0; i < n; i++) {
                 let maxRow = i;
                 for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
                 let tmp = M[i]; M[i] = M[maxRow]; M[maxRow] = tmp;
+                
                 if (Math.abs(M[i][i]) < 1e-10) { solution = { valid: false }; updateSolutionUI(); return; }
+                
                 for (let k = i + 1; k < n; k++) {
                     let factor = M[k][i] / M[i][i];
                     for (let j = i; j <= n; j++) M[k][j] -= factor * M[i][j];
@@ -189,7 +333,10 @@
                 for (let j = i + 1; j < n; j++) sum += M[i][j] * x[j];
                 x[i] = (M[i][n] - sum) / M[i][i];
             }
-            solution = { u: x[0], v: x[1], w: x[2], valid: true };
+            
+            if (n === 2) solution = { u: x[0], v: x[1], w: 0, valid: true };
+            else solution = { u: x[0], v: x[1], w: x[2], valid: true };
+            
             updateSolutionUI();
         }
 
@@ -197,24 +344,19 @@
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0f172a); 
         
-        // Improve camera for mobile (wider FOV)
         const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(15, 15, 20);
 
-        // PreserveDrawingBuffer is REQUIRED for taking screenshots
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-        
-        // Use container size, not window
         const container = document.getElementById('canvas-container');
         renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio); // Sharpness on mobile
+        renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
 
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.05;
 
-        // Lights
         scene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(10, 20, 10);
@@ -222,10 +364,14 @@
 
         const rowGroup = new THREE.Group();
         const colGroup = new THREE.Group();
+        const labelsGroup = new THREE.Group(); 
         scene.add(rowGroup);
         scene.add(colGroup);
+        scene.add(labelsGroup);
         scene.add(new THREE.GridHelper(40, 40, 0x334155, 0x1e293b));
-        scene.add(new THREE.AxesHelper(5));
+        
+        const axesHelper = new THREE.AxesHelper(10);
+        scene.add(axesHelper);
 
         // Visuals State
         let mode = 'row'; 
@@ -233,73 +379,210 @@
         let isPlaying = false;
         let animationSpeed = 0.01;
 
-        // Materials
         const materials = {
             p1: new THREE.MeshPhongMaterial({ color: 0xff4444, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
             p2: new THREE.MeshPhongMaterial({ color: 0x44ff44, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
             p3: new THREE.MeshPhongMaterial({ color: 0x4444ff, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
-            pt: new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffaa00 })
+            line1: new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 3 }),
+            line2: new THREE.LineBasicMaterial({ color: 0x44ff44, linewidth: 3 }),
+            pt: new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffaa00 }),
+            vol: new THREE.MeshPhongMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0.3, vertexColors: true })
         };
 
-        let planes = [], intersectPoint, vectors = [], finalVector;
+        let planes = [], intersectPoint, vectors = [], finalVector, parallelepipedMesh;
+
+        function createTextSprite(text, color, pos) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.font = 'bold 40px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 64, 32);
+            const texture = new THREE.CanvasTexture(canvas);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+            sprite.position.copy(pos);
+            sprite.scale.set(4, 2, 1);
+            return sprite;
+        }
 
         function initVisuals() {
             while(rowGroup.children.length) rowGroup.remove(rowGroup.children[0]);
             while(colGroup.children.length) colGroup.remove(colGroup.children[0]);
-            planes = []; vectors = [];
+            while(labelsGroup.children.length) labelsGroup.remove(labelsGroup.children[0]);
             
+            planes = []; vectors = []; parallelepipedMesh = null;
+            
+            // Adjust camera for 2D vs 3D
+            if (currentDim === 2) {
+                // Top-down view for 2D
+                camera.position.set(0, 0, 30);
+                controls.target.set(0, 0, 0);
+            } else {
+                camera.position.set(15, 15, 20);
+                controls.target.set(0, 0, 0);
+            }
+            controls.update();
+
+            // Labels
+            labelsGroup.add(createTextSprite("U (x)", "#ffaaaa", new THREE.Vector3(11, 0, 0)));
+            labelsGroup.add(createTextSprite("V (y)", "#aaffaa", new THREE.Vector3(0, 11, 0)));
+            if (currentDim === 3) labelsGroup.add(createTextSprite("W (z)", "#aaaaff", new THREE.Vector3(0, 0, 11)));
+
             if (!solution.valid) return;
 
-            // Row Picture
-            matrix.forEach((row, i) => {
-                const [a, b, c, d] = row;
-                const normal = new THREE.Vector3(a, b, c);
-                let p = new THREE.Vector3();
-                if (Math.abs(a)>0.001) p.set(d/a,0,0); else if (Math.abs(b)>0.001) p.set(0,d/b,0); else if (Math.abs(c)>0.001) p.set(0,0,d/c);
-                
-                const mesh = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), i==0?materials.p1:i==1?materials.p2:materials.p3);
-                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), normal.clone().normalize());
-                mesh.position.copy(normal.clone().multiplyScalar(d/normal.lengthSq()));
-                rowGroup.add(mesh);
-                planes.push(mesh);
-            });
+            // --- ROW PICTURE ---
+            if (currentDim === 3) {
+                // 3D Planes
+                matrix.forEach((row, i) => {
+                    const [a, b, c, d] = row;
+                    const normal = new THREE.Vector3(a, b, c);
+                    if(normal.lengthSq() < 0.001) return;
+                    
+                    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), i==0?materials.p1:i==1?materials.p2:materials.p3);
+                    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), normal.clone().normalize());
+                    mesh.position.copy(normal.clone().multiplyScalar(d/normal.lengthSq()));
+                    rowGroup.add(mesh);
+                    planes.push(mesh);
+                });
+            } else {
+                // 2D Lines
+                matrix.forEach((row, i) => {
+                    const [a, b, d] = row;
+                    // Equation: ax + by = d. Draw segment within box [-15, 15]
+                    const pts = [];
+                    // Check intersections with x=-15, x=15, y=-15, y=15
+                    const box = 15;
+                    // If b != 0
+                    if (Math.abs(b) > 0.001) {
+                        let y1 = (d - a * (-box)) / b;
+                        if (y1 >= -box && y1 <= box) pts.push(new THREE.Vector3(-box, y1, 0));
+                        let y2 = (d - a * (box)) / b;
+                        if (y2 >= -box && y2 <= box) pts.push(new THREE.Vector3(box, y2, 0));
+                    }
+                    // If a != 0
+                    if (Math.abs(a) > 0.001) {
+                        let x1 = (d - b * (-box)) / a;
+                        if (x1 >= -box && x1 <= box && pts.length < 2) pts.push(new THREE.Vector3(x1, -box, 0));
+                        let x2 = (d - b * (box)) / a;
+                        if (x2 >= -box && x2 <= box && pts.length < 2) pts.push(new THREE.Vector3(x2, box, 0));
+                    }
+
+                    if (pts.length >= 2) {
+                        // Make lines thicker by using thin cylinders instead
+                        const path = new THREE.Vector3().subVectors(pts[1], pts[0]);
+                        const len = path.length();
+                        // Reduced width: Changed radius from 0.15 to 0.05
+                        const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, len, 8), i==0?materials.p1:materials.p2);
+                        cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), path.normalize());
+                        cylinder.position.copy(new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5));
+                        cylinder.material = new THREE.MeshBasicMaterial({ color: i==0?0xff4444:0x44ff44 });
+                        
+                        rowGroup.add(cylinder);
+                        planes.push(cylinder);
+                    }
+                });
+            }
+            
             intersectPoint = new THREE.Mesh(new THREE.SphereGeometry(0.4), materials.pt);
             intersectPoint.position.set(solution.u, solution.v, solution.w);
             intersectPoint.visible = false;
             rowGroup.add(intersectPoint);
 
-            // Column Picture
-            const cols = [
-                new THREE.Vector3(matrix[0][0], matrix[1][0], matrix[2][0]),
-                new THREE.Vector3(matrix[0][1], matrix[1][1], matrix[2][1]),
-                new THREE.Vector3(matrix[0][2], matrix[1][2], matrix[2][2])
-            ];
+            // --- COLUMN PICTURE ---
+            const cols = [];
+            for(let j=0; j<currentDim; j++) {
+                if (currentDim === 3) cols.push(new THREE.Vector3(matrix[0][j], matrix[1][j], matrix[2][j]));
+                else cols.push(new THREE.Vector3(matrix[0][j], matrix[1][j], 0));
+            }
+            
             const colors = [0xff4444, 0x44ff44, 0x4444ff];
             
             // Ghost vectors
             cols.forEach((v, i) => {
+                if (v.lengthSq() < 0.001) return;
                 const arr = new THREE.ArrowHelper(v.clone().normalize(), new THREE.Vector3(), v.length(), colors[i], 0.4, 0.2);
                 arr.line.material.opacity = 0.2; arr.line.material.transparent = true;
                 arr.cone.material.opacity = 0.2; arr.cone.material.transparent = true;
                 colGroup.add(arr);
             });
 
-            // Active Vectors
+            // Active Vectors - Precalculate full paths
             let currentStart = new THREE.Vector3();
             const scalars = [solution.u, solution.v, solution.w];
             
             cols.forEach((v, i) => {
                 const full = v.clone().multiplyScalar(scalars[i]);
-                const arrow = new THREE.ArrowHelper(v.clone().normalize(), new THREE.Vector3(), 0.001, colors[i], 0.4, 0.2);
+                let dir = v.clone().normalize();
+                if (scalars[i] < 0) dir.negate();
+                
+                // If vector is zero length, just use default direction
+                if (full.lengthSq() < 0.0001) dir = new THREE.Vector3(1,0,0);
+
+                const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(), 0.001, colors[i], 0.4, 0.2);
                 colGroup.add(arrow);
                 vectors.push({ arrow, full, start: currentStart.clone() });
                 currentStart.add(full);
             });
 
-            const target = new THREE.Vector3(matrix[0][3], matrix[1][3], matrix[2][3]);
+            let target;
+            if (currentDim === 3) target = new THREE.Vector3(matrix[0][3], matrix[1][3], matrix[2][3]);
+            else target = new THREE.Vector3(matrix[0][2], matrix[1][2], 0);
+
             finalVector = new THREE.ArrowHelper(target.clone().normalize(), new THREE.Vector3(), target.length(), 0xffff00, 0.6, 0.3);
             finalVector.visible = false;
             colGroup.add(finalVector);
+
+            // Solid Volume (Parallelepiped or Parallelogram)
+            if (vectors.length >= 2) {
+                const s1 = vectors[0].full;
+                const s2 = vectors[1].full;
+                
+                const positions = [];
+                const colorAttr = [];
+                const c1 = new THREE.Color(0xff4444), c2 = new THREE.Color(0x44ff44), c3 = new THREE.Color(0x4444ff);
+                const c0 = new THREE.Color(0x000000);
+                
+                const pushTri = (va, ca, vb, cb, vc, cc) => {
+                    positions.push(va.x,va.y,va.z, vb.x,vb.y,vb.z, vc.x,vc.y,vc.z);
+                    colorAttr.push(ca.r,ca.g,ca.b, cb.r,cb.g,cb.b, cc.r,cc.g,cc.b);
+                };
+                
+                const pushQuad = (va, ca, vb, cb, vc, cc, vd, cd) => {
+                    pushTri(va,ca, vb,cb, vc,cc);
+                    pushTri(va,ca, vc,cc, vd,cd);
+                };
+
+                if (currentDim === 3) {
+                    const s3 = vectors[2].full;
+                    const v0=new THREE.Vector3(), v1=s1, v2=s2, v3=s3;
+                    const v4=s1.clone().add(s2), v5=s1.clone().add(s3), v6=s2.clone().add(s3), v7=s1.clone().add(s2).add(s3);
+                    const c4=c1.clone().add(c2), c5=c1.clone().add(c3), c6=c2.clone().add(c3), c7=c4.clone().add(c3);
+                    
+                    pushQuad(v0,c0, v1,c1, v4,c4, v2,c2); 
+                    pushQuad(v3,c3, v5,c5, v7,c7, v6,c6);
+                    pushQuad(v0,c0, v2,c2, v6,c6, v3,c3);
+                    pushQuad(v1,c1, v5,c5, v7,c7, v4,c4);
+                    pushQuad(v0,c0, v1,c1, v5,c5, v3,c3);
+                    pushQuad(v2,c2, v4,c4, v7,c7, v6,c6);
+                } else {
+                    // 2D Parallelogram on Z=0
+                    // Vertices: 0, s1, s1+s2, s2
+                    const v0=new THREE.Vector3(), v1=s1, v2=s1.clone().add(s2), v3=s2;
+                    const c4=c1.clone().add(c2);
+                    pushQuad(v0,c0, v1,c1, v2,c4, v3,c2);
+                }
+
+                const volGeom = new THREE.BufferGeometry();
+                volGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                volGeom.setAttribute('color', new THREE.Float32BufferAttribute(colorAttr, 3));
+                volGeom.computeVertexNormals();
+                parallelepipedMesh = new THREE.Mesh(volGeom, materials.vol);
+                parallelepipedMesh.visible = false;
+                colGroup.add(parallelepipedMesh);
+            }
 
             setMode(mode);
         }
@@ -315,31 +598,59 @@
         }
 
         function updateScene(t) {
+            const numSteps = currentDim;
+            const stepSize = 1.0/numSteps;
+
             if (mode === 'col') {
                 vectors.forEach(v => v.arrow.setLength(0.001));
                 finalVector.visible = false;
-                const t1 = Math.min(Math.max(t*3, 0), 1), t2 = Math.min(Math.max(t*3-1, 0), 1), t3 = Math.min(Math.max(t*3-2, 0), 1);
                 
-                if (t1>0) { vectors[0].arrow.setLength(Math.max(0.001, vectors[0].full.length()*t1)); vectors[0].arrow.position.copy(vectors[0].start); }
-                if (t2>0) { vectors[1].arrow.setLength(Math.max(0.001, vectors[1].full.length()*t2)); vectors[1].arrow.position.copy(vectors[0].start.clone().add(vectors[0].full)); }
-                if (t3>0) { vectors[2].arrow.setLength(Math.max(0.001, vectors[2].full.length()*t3)); vectors[2].arrow.position.copy(vectors[1].arrow.position.clone().add(vectors[1].full)); }
-                if (t>=1) finalVector.visible = true;
+                for(let i=0; i<numSteps; i++) {
+                     // logic: vectors[i] grows from t = i*stepSize to (i+1)*stepSize
+                     const tStart = i*stepSize;
+                     const localT = Math.min(Math.max((t - tStart)/stepSize, 0), 1);
+                     
+                     if (localT > 0 && visibilityState.col[i]) {
+                         vectors[i].arrow.setLength(Math.max(0.001, vectors[i].full.length()*localT));
+                         // Correct Logic: Use pre-calculated start position to avoid dependency on previous arrow's state
+                         vectors[i].arrow.position.copy(vectors[i].start);
+                         vectors[i].arrow.visible = true;
+                     } else {
+                         vectors[i].arrow.visible = false;
+                     }
+                }
+
+                if (t >= 1 && visibilityState.col[numSteps]) finalVector.visible = true;
+                else finalVector.visible = false;
+
+                if (parallelepipedMesh) {
+                    parallelepipedMesh.visible = visibilityState.col[numSteps+1] && t >= 0.1;
+                    parallelepipedMesh.material.opacity = Math.min(t * 0.3, 0.3);
+                }
                 
-                const step = t<0.33 ? 1 : t<0.66 ? 2 : 3;
+                const step = Math.min(Math.floor(t * numSteps) + 1, numSteps);
                 document.getElementById('explanation-box').innerHTML = t>=1 ? "Result: Target vector <b class='text-yellow-400'>b</b> reached!" : `Step ${step}: Adding Column ${step}...`;
-            } else {
-                const t1 = Math.min(Math.max(t*3, 0), 1), t2 = Math.min(Math.max(t*3-1, 0), 1), t3 = Math.min(Math.max(t*3-2, 0), 1);
-                planes[0].visible = t1>0; planes[0].material.opacity = 0.3*t1;
-                planes[1].visible = t2>0; planes[1].material.opacity = 0.3*t2;
-                planes[2].visible = t3>0; planes[2].material.opacity = 0.3*t3;
-                intersectPoint.visible = t3>0.9;
                 
-                const step = t<0.33 ? 1 : t<0.66 ? 2 : 3;
-                document.getElementById('explanation-box').innerHTML = t>=1 ? `Intersection found at <b class='text-yellow-400'>(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}, ${solution.w.toFixed(1)})</b>` : `Step ${step}: Showing Plane ${step}...`;
+            } else {
+                for(let i=0; i<numSteps; i++) {
+                    const tStart = i*stepSize;
+                    const localT = Math.min(Math.max((t - tStart)/stepSize, 0), 1);
+                    if (visibilityState.row[i]) {
+                        planes[i].visible = localT > 0;
+                        if (currentDim === 3) planes[i].material.opacity = 0.3 * localT;
+                    } else planes[i].visible = false;
+                }
+                
+                // Show point only if we are at the end and all planes are visible
+                let allRowVis = true;
+                for(let i=0; i<numSteps; i++) if(!visibilityState.row[i]) allRowVis=false;
+                intersectPoint.visible = (t > 0.9 && allRowVis);
+                
+                const step = Math.min(Math.floor(t * numSteps) + 1, numSteps);
+                document.getElementById('explanation-box').innerHTML = t>=1 ? `Intersection at <b class='text-yellow-400'>(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}${currentDim===3?', '+solution.w.toFixed(1):''})</b>` : `Step ${step}: Showing Equation ${step}...`;
             }
         }
 
-        // --- Interaction ---
         function setMode(m) {
             mode = m;
             document.getElementById('btn-row').className = `toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide ${m==='row'?'active':'text-slate-400'}`;
@@ -347,76 +658,41 @@
             rowGroup.visible = (m === 'row');
             colGroup.visible = (m === 'col');
             document.getElementById('mode-title-overlay').innerText = m === 'row' ? "Row Picture" : "Column Picture";
-            
-            // Adjust camera for mobile
-            if(window.innerWidth < 768) camera.position.set(20, 20, 30);
-            else camera.position.set(15, 15, 20);
-            
+            renderVisibilityControls();
             resetAnimation();
         }
 
         function resetAnimation() { animationTime = 0; isPlaying = false; document.getElementById('play-btn').innerHTML = '<i class="fas fa-play"></i> Play'; updateScene(0); }
         function togglePlay() { isPlaying = !isPlaying; document.getElementById('play-btn').innerHTML = isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play'; if(animationTime>=1.1) animationTime=0; }
         
-        // --- Download Feature with Composite Inputs ---
         function downloadSnapshot() {
-            // 1. Force a render
             renderer.render(scene, camera);
-            
-            // 2. Setup constants
             const w = renderer.domElement.width;
             const h = renderer.domElement.height;
-            const footerH = 120; // Extra space for data
-            
-            // 3. Create composite canvas
+            const footerH = 120;
             const canvas = document.createElement('canvas');
             canvas.width = w;
             canvas.height = h + footerH;
             const ctx = canvas.getContext('2d');
-            
-            // 4. Background
-            ctx.fillStyle = '#0f172a'; // Match body bg
+            ctx.fillStyle = '#0f172a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // 5. Draw 3D Scene
             ctx.drawImage(renderer.domElement, 0, 0);
-            
-            // 6. Draw Footer Background
-            ctx.fillStyle = '#1e293b'; // Slate-800
+            ctx.fillStyle = '#1e293b';
             ctx.fillRect(0, h, w, footerH);
-            
-            // 7. Draw Text (Responsive-ish)
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 20px sans-serif';
             ctx.fillText("Linear System Visualization", 20, h + 30);
-            
-            // Equations
             ctx.font = '14px monospace';
             ctx.fillStyle = '#94a3b8';
             let startY = h + 55;
             matrix.forEach((row, i) => {
-                const txt = `${row[0]}u + ${row[1]}v + ${row[2]}w = ${row[3]}`;
+                let txt = "";
+                if(currentDim === 3) txt = `${row[0]}u + ${row[1]}v + ${row[2]}w = ${row[3]}`;
+                else txt = `${row[0]}u + ${row[1]}v = ${row[2]}`;
                 ctx.fillText(txt, 20, startY + (i*18));
             });
-            
-            // Solution
-            if (w > 400) { // Only show solution on right if space permits
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 16px sans-serif';
-                ctx.fillText("Solution:", w/2, h + 30);
-                
-                ctx.font = 'bold 18px monospace';
-                ctx.fillStyle = solution.valid ? '#34d399' : '#ef4444';
-                const solTxt = solution.valid 
-                    ? `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)}, ${solution.w.toFixed(2)})`
-                    : "No Unique Solution";
-                ctx.fillText(solTxt, w/2, h + 55);
-            }
-            
-            // 8. Download
             const link = document.createElement('a');
-            const timestamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
-            link.download = `linear_system_${timestamp}.png`;
+            link.download = `linear_system.png`;
             link.href = canvas.toDataURL('image/png');
             link.click();
         }
@@ -425,28 +701,30 @@
             const container = document.getElementById('matrix-inputs');
             container.innerHTML = '';
             const vars = ['u','v','w'];
+            const n = currentDim;
             matrix.forEach((row, i) => {
                 const div = document.createElement('div');
                 div.className = "flex items-center gap-1";
-                for(let j=0; j<3; j++) {
-                    div.innerHTML += `<input type="number" value="${row[j]}" onchange="updateM(${i},${j},this.value)" class="bg-slate-700 rounded px-1 w-10 text-center"><span class="text-slate-500 w-3">${vars[j]}</span>${j<2?'+':''}`;
+                for(let j=0; j<n; j++) {
+                    div.innerHTML += `<input type="number" value="${row[j]}" onchange="updateM(${i},${j},this.value)" class="bg-slate-700 rounded px-1 w-10 text-center"><span class="text-slate-500 w-3">${vars[j]}</span>${j<n-1?'+':''}`;
                 }
-                div.innerHTML += `= <input type="number" value="${row[3]}" onchange="updateM(${i},3,this.value)" class="bg-slate-700 rounded px-1 w-10 text-center">`;
+                div.innerHTML += `= <input type="number" value="${row[n]}" onchange="updateM(${i},${n},this.value)" class="bg-slate-700 rounded px-1 w-10 text-center">`;
                 container.appendChild(div);
             });
         }
         window.updateM = (r, c, v) => { matrix[r][c] = parseFloat(v); solveSystem(); initVisuals(); resetAnimation(); };
-        window.resetToDefault = () => { matrix = JSON.parse(JSON.stringify(defaultMatrix)); generateInputs(); solveSystem(); initVisuals(); resetAnimation(); };
+        window.resetToDefault = () => { if(currentDim===3) matrix = JSON.parse(JSON.stringify(defaultMatrix3D)); else matrix = JSON.parse(JSON.stringify(defaultMatrix2D)); generateInputs(); solveSystem(); initVisuals(); resetAnimation(); };
         function updateSolutionUI() {
             const el = document.getElementById('solution-display');
-            if(solution.valid) { el.innerText = `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)}, ${solution.w.toFixed(2)})`; el.className="font-mono text-emerald-400 text-base font-bold"; }
+            if(solution.valid) { 
+                const txt = currentDim===3 ? `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)}, ${solution.w.toFixed(2)})` : `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)})`;
+                el.innerText = txt; el.className="font-mono text-emerald-400 text-base font-bold"; 
+            }
             else { el.innerText = "No Unique Solution"; el.className="font-mono text-red-500 text-sm font-bold"; }
         }
 
-        // --- Init & Resize ---
         generateInputs(); solveSystem(); initVisuals(); animate();
         
-        // Critical for embeds: Use container dimensions
         window.addEventListener('resize', () => {
             const w = container.clientWidth;
             const h = container.clientHeight;

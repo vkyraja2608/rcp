@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Row & Column Picture Visualization</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <style>
+        /* Embed-friendly CSS: Use 100% instead of viewport units */
+        html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; background-color: #0f172a; color: white; font-family: 'Segoe UI', sans-serif; }
+        #canvas-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+        .pointer-events-auto { pointer-events: auto; }
+        
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.95); /* Slightly more opaque for readability */
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+
+        input[type="number"] {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #334155;
+            color: white;
+            padding: 4px;
+            border-radius: 4px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .toggle-btn.active {
+            background-color: #3b82f6;
+            color: white;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+        }
+
+        .math-font { font-family: 'Times New Roman', serif; font-style: italic; }
+
+        /* Mobile transition for collapsing sidebar */
+        #sidebar-content {
+            transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+            overflow: hidden;
+        }
+        .collapsed #sidebar-content {
+            max-height: 0;
+            opacity: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer" class="flex flex-col p-2 md:p-4">
+        
+        <!-- Controls Container -->
+        <div id="main-panel" class="pointer-events-auto glass-panel rounded-xl w-full max-w-sm flex flex-col transition-all duration-300">
+            
+            <!-- Header (Always Visible) -->
+            <div class="flex justify-between items-center p-4 bg-slate-900/50 rounded-t-xl cursor-pointer" onclick="toggleSidebar()">
+                <div>
+                    <h1 class="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-emerald-400">Linear Systems</h1>
+                    <p class="text-[10px] text-slate-400">Strang's Row vs Column</p>
+                </div>
+                <!-- Mobile Toggle Icon -->
+                <button class="text-slate-400 hover:text-white transition-colors p-2">
+                    <i id="chevron-icon" class="fas fa-chevron-up transform transition-transform duration-300"></i>
+                </button>
+            </div>
+
+            <!-- Scrollable Content (Collapsible) -->
+            <div id="sidebar-content" class="px-4 pb-4 max-h-[60vh] md:max-h-[80vh] overflow-y-auto space-y-4">
+                
+                <!-- View Toggle -->
+                <div class="grid grid-cols-2 gap-2 bg-slate-800 p-1 rounded-lg mt-2">
+                    <button id="btn-row" onclick="setMode('row'); event.stopPropagation();" class="toggle-btn active py-2 rounded-md text-xs font-bold uppercase tracking-wide">Row Pic</button>
+                    <button id="btn-col" onclick="setMode('col'); event.stopPropagation();" class="toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide text-slate-400">Col Pic</button>
+                </div>
+
+                <!-- Animation & Tools Controls -->
+                <div class="flex gap-2">
+                    <button onclick="resetAnimation(); event.stopPropagation();" class="w-10 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm" title="Reset Animation"><i class="fas fa-undo"></i></button>
+                    <button id="play-btn" onclick="togglePlay(); event.stopPropagation();" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg text-sm font-bold shadow-lg shadow-emerald-900/50">
+                        <i class="fas fa-play"></i> Play
+                    </button>
+                    <button onclick="downloadSnapshot(); event.stopPropagation();" class="w-10 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg text-sm" title="Download Image"><i class="fas fa-camera"></i></button>
+                </div>
+
+                <!-- Matrix Input -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xs font-bold text-slate-400 uppercase">System (Ax = b)</h2>
+                        <button onclick="resetToDefault(); event.stopPropagation();" class="text-[10px] text-blue-400 underline">Reset</button>
+                    </div>
+                    <div id="matrix-inputs" class="space-y-1 text-xs"></div>
+                </div>
+
+                <!-- Solution Display -->
+                <div class="bg-slate-800/80 p-3 rounded-lg text-center border border-slate-700">
+                    <div class="text-[10px] text-slate-500 uppercase mb-1">Solution (u, v, w)</div>
+                    <div id="solution-display" class="font-mono text-emerald-400 text-base font-bold">Computing...</div>
+                </div>
+
+                <!-- Explanation -->
+                <div id="explanation-box" class="text-xs text-slate-300 leading-relaxed border-t border-slate-700 pt-3">
+                    Loading...
+                </div>
+            </div>
+        </div>
+
+        <!-- Mode Indicator (Floating Top Right, Hidden on tiny screens if needed) -->
+        <div class="absolute top-4 right-4 pointer-events-none hidden md:block">
+            <div class="glass-panel px-4 py-2 rounded-lg text-right">
+                <div id="mode-title-overlay" class="text-sm font-bold text-white">Row Picture</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- UI Logic for Mobile ---
+        let isSidebarOpen = true;
+        
+        function toggleSidebar() {
+            const panel = document.getElementById('main-panel');
+            const icon = document.getElementById('chevron-icon');
+            const content = document.getElementById('sidebar-content');
+            
+            isSidebarOpen = !isSidebarOpen;
+            
+            if (isSidebarOpen) {
+                panel.classList.remove('collapsed');
+                icon.style.transform = 'rotate(0deg)';
+                // On mobile, maximize opacity/height
+                content.style.maxHeight = window.innerWidth < 768 ? '60vh' : '80vh';
+                content.style.opacity = '1';
+                content.style.paddingBottom = '1rem';
+            } else {
+                panel.classList.add('collapsed');
+                icon.style.transform = 'rotate(180deg)';
+                content.style.maxHeight = '0';
+                content.style.opacity = '0';
+                content.style.paddingBottom = '0';
+            }
+        }
+
+        // Auto-collapse on small screens initially
+        if (window.innerWidth < 768) {
+            toggleSidebar(); 
+        }
+
+        // --- Linear Algebra Logic ---
+        const defaultMatrix = [[2, 1, 1, 5], [4, -6, 0, -2], [-2, 7, 2, 9]];
+        let matrix = JSON.parse(JSON.stringify(defaultMatrix));
+        let solution = { u: 0, v: 0, w: 0, valid: false };
+
+        function solveSystem() {
+            let M = JSON.parse(JSON.stringify(matrix));
+            const n = 3;
+            // Forward Elimination
+            for (let i = 0; i < n; i++) {
+                let maxRow = i;
+                for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
+                let tmp = M[i]; M[i] = M[maxRow]; M[maxRow] = tmp;
+                if (Math.abs(M[i][i]) < 1e-10) { solution = { valid: false }; updateSolutionUI(); return; }
+                for (let k = i + 1; k < n; k++) {
+                    let factor = M[k][i] / M[i][i];
+                    for (let j = i; j <= n; j++) M[k][j] -= factor * M[i][j];
+                }
+            }
+            // Back Substitution
+            let x = new Array(n).fill(0);
+            for (let i = n - 1; i >= 0; i--) {
+                let sum = 0;
+                for (let j = i + 1; j < n; j++) sum += M[i][j] * x[j];
+                x[i] = (M[i][n] - sum) / M[i][i];
+            }
+            solution = { u: x[0], v: x[1], w: x[2], valid: true };
+            updateSolutionUI();
+        }
+
+        // --- Three.js Logic ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0f172a); 
+        
+        // Improve camera for mobile (wider FOV)
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(15, 15, 20);
+
+        // PreserveDrawingBuffer is REQUIRED for taking screenshots
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        
+        // Use container size, not window
+        const container = document.getElementById('canvas-container');
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio); // Sharpness on mobile
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Lights
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
+
+        const rowGroup = new THREE.Group();
+        const colGroup = new THREE.Group();
+        scene.add(rowGroup);
+        scene.add(colGroup);
+        scene.add(new THREE.GridHelper(40, 40, 0x334155, 0x1e293b));
+        scene.add(new THREE.AxesHelper(5));
+
+        // Visuals State
+        let mode = 'row'; 
+        let animationTime = 0;
+        let isPlaying = false;
+        let animationSpeed = 0.01;
+
+        // Materials
+        const materials = {
+            p1: new THREE.MeshPhongMaterial({ color: 0xff4444, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
+            p2: new THREE.MeshPhongMaterial({ color: 0x44ff44, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
+            p3: new THREE.MeshPhongMaterial({ color: 0x4444ff, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
+            pt: new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffaa00 })
+        };
+
+        let planes = [], intersectPoint, vectors = [], finalVector;
+
+        function initVisuals() {
+            while(rowGroup.children.length) rowGroup.remove(rowGroup.children[0]);
+            while(colGroup.children.length) colGroup.remove(colGroup.children[0]);
+            planes = []; vectors = [];
+            
+            if (!solution.valid) return;
+
+            // Row Picture
+            matrix.forEach((row, i) => {
+                const [a, b, c, d] = row;
+                const normal = new THREE.Vector3(a, b, c);
+                let p = new THREE.Vector3();
+                if (Math.abs(a)>0.001) p.set(d/a,0,0); else if (Math.abs(b)>0.001) p.set(0,d/b,0); else if (Math.abs(c)>0.001) p.set(0,0,d/c);
+                
+                const mesh = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), i==0?materials.p1:i==1?materials.p2:materials.p3);
+                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), normal.clone().normalize());
+                mesh.position.copy(normal.clone().multiplyScalar(d/normal.lengthSq()));
+                rowGroup.add(mesh);
+                planes.push(mesh);
+            });
+            intersectPoint = new THREE.Mesh(new THREE.SphereGeometry(0.4), materials.pt);
+            intersectPoint.position.set(solution.u, solution.v, solution.w);
+            intersectPoint.visible = false;
+            rowGroup.add(intersectPoint);
+
+            // Column Picture
+            const cols = [
+                new THREE.Vector3(matrix[0][0], matrix[1][0], matrix[2][0]),
+                new THREE.Vector3(matrix[0][1], matrix[1][1], matrix[2][1]),
+                new THREE.Vector3(matrix[0][2], matrix[1][2], matrix[2][2])
+            ];
+            const colors = [0xff4444, 0x44ff44, 0x4444ff];
+            
+            // Ghost vectors
+            cols.forEach((v, i) => {
+                const arr = new THREE.ArrowHelper(v.clone().normalize(), new THREE.Vector3(), v.length(), colors[i], 0.4, 0.2);
+                arr.line.material.opacity = 0.2; arr.line.material.transparent = true;
+                arr.cone.material.opacity = 0.2; arr.cone.material.transparent = true;
+                colGroup.add(arr);
+            });
+
+            // Active Vectors
+            let currentStart = new THREE.Vector3();
+            const scalars = [solution.u, solution.v, solution.w];
+            
+            cols.forEach((v, i) => {
+                const full = v.clone().multiplyScalar(scalars[i]);
+                const arrow = new THREE.ArrowHelper(v.clone().normalize(), new THREE.Vector3(), 0.001, colors[i], 0.4, 0.2);
+                colGroup.add(arrow);
+                vectors.push({ arrow, full, start: currentStart.clone() });
+                currentStart.add(full);
+            });
+
+            const target = new THREE.Vector3(matrix[0][3], matrix[1][3], matrix[2][3]);
+            finalVector = new THREE.ArrowHelper(target.clone().normalize(), new THREE.Vector3(), target.length(), 0xffff00, 0.6, 0.3);
+            finalVector.visible = false;
+            colGroup.add(finalVector);
+
+            setMode(mode);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            if (isPlaying && solution.valid) {
+                animationTime = Math.min(animationTime + animationSpeed, 1.1);
+                updateScene(animationTime);
+            }
+            renderer.render(scene, camera);
+        }
+
+        function updateScene(t) {
+            if (mode === 'col') {
+                vectors.forEach(v => v.arrow.setLength(0.001));
+                finalVector.visible = false;
+                const t1 = Math.min(Math.max(t*3, 0), 1), t2 = Math.min(Math.max(t*3-1, 0), 1), t3 = Math.min(Math.max(t*3-2, 0), 1);
+                
+                if (t1>0) { vectors[0].arrow.setLength(Math.max(0.001, vectors[0].full.length()*t1)); vectors[0].arrow.position.copy(vectors[0].start); }
+                if (t2>0) { vectors[1].arrow.setLength(Math.max(0.001, vectors[1].full.length()*t2)); vectors[1].arrow.position.copy(vectors[0].start.clone().add(vectors[0].full)); }
+                if (t3>0) { vectors[2].arrow.setLength(Math.max(0.001, vectors[2].full.length()*t3)); vectors[2].arrow.position.copy(vectors[1].arrow.position.clone().add(vectors[1].full)); }
+                if (t>=1) finalVector.visible = true;
+                
+                const step = t<0.33 ? 1 : t<0.66 ? 2 : 3;
+                document.getElementById('explanation-box').innerHTML = t>=1 ? "Result: Target vector <b class='text-yellow-400'>b</b> reached!" : `Step ${step}: Adding Column ${step}...`;
+            } else {
+                const t1 = Math.min(Math.max(t*3, 0), 1), t2 = Math.min(Math.max(t*3-1, 0), 1), t3 = Math.min(Math.max(t*3-2, 0), 1);
+                planes[0].visible = t1>0; planes[0].material.opacity = 0.3*t1;
+                planes[1].visible = t2>0; planes[1].material.opacity = 0.3*t2;
+                planes[2].visible = t3>0; planes[2].material.opacity = 0.3*t3;
+                intersectPoint.visible = t3>0.9;
+                
+                const step = t<0.33 ? 1 : t<0.66 ? 2 : 3;
+                document.getElementById('explanation-box').innerHTML = t>=1 ? `Intersection found at <b class='text-yellow-400'>(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}, ${solution.w.toFixed(1)})</b>` : `Step ${step}: Showing Plane ${step}...`;
+            }
+        }
+
+        // --- Interaction ---
+        function setMode(m) {
+            mode = m;
+            document.getElementById('btn-row').className = `toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide ${m==='row'?'active':'text-slate-400'}`;
+            document.getElementById('btn-col').className = `toggle-btn py-2 rounded-md text-xs font-bold uppercase tracking-wide ${m==='col'?'active':'text-slate-400'}`;
+            rowGroup.visible = (m === 'row');
+            colGroup.visible = (m === 'col');
+            document.getElementById('mode-title-overlay').innerText = m === 'row' ? "Row Picture" : "Column Picture";
+            
+            // Adjust camera for mobile
+            if(window.innerWidth < 768) camera.position.set(20, 20, 30);
+            else camera.position.set(15, 15, 20);
+            
+            resetAnimation();
+        }
+
+        function resetAnimation() { animationTime = 0; isPlaying = false; document.getElementById('play-btn').innerHTML = '<i class="fas fa-play"></i> Play'; updateScene(0); }
+        function togglePlay() { isPlaying = !isPlaying; document.getElementById('play-btn').innerHTML = isPlaying ? '<i class="fas fa-pause"></i> Pause' : '<i class="fas fa-play"></i> Play'; if(animationTime>=1.1) animationTime=0; }
+        
+        // --- Download Feature with Composite Inputs ---
+        function downloadSnapshot() {
+            // 1. Force a render
+            renderer.render(scene, camera);
+            
+            // 2. Setup constants
+            const w = renderer.domElement.width;
+            const h = renderer.domElement.height;
+            const footerH = 120; // Extra space for data
+            
+            // 3. Create composite canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h + footerH;
+            const ctx = canvas.getContext('2d');
+            
+            // 4. Background
+            ctx.fillStyle = '#0f172a'; // Match body bg
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 5. Draw 3D Scene
+            ctx.drawImage(renderer.domElement, 0, 0);
+            
+            // 6. Draw Footer Background
+            ctx.fillStyle = '#1e293b'; // Slate-800
+            ctx.fillRect(0, h, w, footerH);
+            
+            // 7. Draw Text (Responsive-ish)
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillText("Linear System Visualization", 20, h + 30);
+            
+            // Equations
+            ctx.font = '14px monospace';
+            ctx.fillStyle = '#94a3b8';
+            let startY = h + 55;
+            matrix.forEach((row, i) => {
+                const txt = `${row[0]}u + ${row[1]}v + ${row[2]}w = ${row[3]}`;
+                ctx.fillText(txt, 20, startY + (i*18));
+            });
+            
+            // Solution
+            if (w > 400) { // Only show solution on right if space permits
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 16px sans-serif';
+                ctx.fillText("Solution:", w/2, h + 30);
+                
+                ctx.font = 'bold 18px monospace';
+                ctx.fillStyle = solution.valid ? '#34d399' : '#ef4444';
+                const solTxt = solution.valid 
+                    ? `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)}, ${solution.w.toFixed(2)})`
+                    : "No Unique Solution";
+                ctx.fillText(solTxt, w/2, h + 55);
+            }
+            
+            // 8. Download
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+            link.download = `linear_system_${timestamp}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function generateInputs() {
+            const container = document.getElementById('matrix-inputs');
+            container.innerHTML = '';
+            const vars = ['u','v','w'];
+            matrix.forEach((row, i) => {
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-1";
+                for(let j=0; j<3; j++) {
+                    div.innerHTML += `<input type="number" value="${row[j]}" onchange="updateM(${i},${j},this.value)" class="bg-slate-700 rounded px-1 w-10 text-center"><span class="text-slate-500 w-3">${vars[j]}</span>${j<2?'+':''}`;
+                }
+                div.innerHTML += `= <input type="number" value="${row[3]}" onchange="updateM(${i},3,this.value)" class="bg-slate-700 rounded px-1 w-10 text-center">`;
+                container.appendChild(div);
+            });
+        }
+        window.updateM = (r, c, v) => { matrix[r][c] = parseFloat(v); solveSystem(); initVisuals(); resetAnimation(); };
+        window.resetToDefault = () => { matrix = JSON.parse(JSON.stringify(defaultMatrix)); generateInputs(); solveSystem(); initVisuals(); resetAnimation(); };
+        function updateSolutionUI() {
+            const el = document.getElementById('solution-display');
+            if(solution.valid) { el.innerText = `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)}, ${solution.w.toFixed(2)})`; el.className="font-mono text-emerald-400 text-base font-bold"; }
+            else { el.innerText = "No Unique Solution"; el.className="font-mono text-red-500 text-sm font-bold"; }
+        }
+
+        // --- Init & Resize ---
+        generateInputs(); solveSystem(); initVisuals(); animate();
+        
+        // Critical for embeds: Use container dimensions
+        window.addEventListener('resize', () => {
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+            renderer.setSize(w, h);
+            camera.aspect = w / h;
+            camera.updateProjectionMatrix();
+        });
+
+    </script>
+</body>
+</html>

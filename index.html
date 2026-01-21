@@ -199,7 +199,8 @@
         let currentDim = 3;
         let visibilityState = {
             row: [true, true, true],
-            col: [true, true, true, true, true] 
+            col: [true, true, true, true, true],
+            labels: true // Global toggle for labels
         };
         
         function toggleSidebar() {
@@ -269,10 +270,23 @@
                     container.appendChild(div);
                 });
             }
+
+            // Global Label Toggle
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'flex items-center gap-2 col-span-2 border-t border-slate-700 pt-2 mt-1';
+            labelDiv.innerHTML = `
+                <input type="checkbox" class="vis-checkbox" ${visibilityState.labels ? 'checked' : ''} onchange="toggleVis('labels', null)">
+                <span class="text-slate-300 font-bold">Show Labels</span>
+            `;
+            container.appendChild(labelDiv);
         }
 
         function toggleVis(type, index) {
-            visibilityState[type][index] = !visibilityState[type][index];
+            if (type === 'labels') {
+                visibilityState.labels = !visibilityState.labels;
+            } else {
+                visibilityState[type][index] = !visibilityState[type][index];
+            }
             updateScene(animationTime);
         }
 
@@ -289,11 +303,9 @@
 
         function randomizeSystem() {
             const n = currentDim;
-            // Generate a random integer solution first to ensure clean results
             const sol = [];
             for(let i=0; i<n; i++) sol.push(getRandomInt(-3, 3));
             
-            // Generate random coefficients and calculate b
             const newMatrix = [];
             for(let i=0; i<n; i++) {
                 const row = [];
@@ -334,7 +346,6 @@
         function solveSystem() {
             let M = JSON.parse(JSON.stringify(matrix));
             const n = currentDim;
-            // Forward Elimination
             for (let i = 0; i < n; i++) {
                 let maxRow = i;
                 for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
@@ -347,7 +358,6 @@
                     for (let j = i; j <= n; j++) M[k][j] -= factor * M[i][j];
                 }
             }
-            // Back Substitution
             let x = new Array(n).fill(0);
             for (let i = n - 1; i >= 0; i--) {
                 let sum = 0;
@@ -404,28 +414,40 @@
             p1: new THREE.MeshPhongMaterial({ color: 0xff4444, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
             p2: new THREE.MeshPhongMaterial({ color: 0x44ff44, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
             p3: new THREE.MeshPhongMaterial({ color: 0x4444ff, side: 2, transparent: true, opacity: 0.3, depthWrite: false }),
-            line1: new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 3 }),
-            line2: new THREE.LineBasicMaterial({ color: 0x44ff44, linewidth: 3 }),
             pt: new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0xffaa00 }),
             vol: new THREE.MeshPhongMaterial({ side: THREE.DoubleSide, transparent: true, opacity: 0.3, vertexColors: true })
         };
 
         let planes = [], intersectPoint, vectors = [], finalVector, parallelepipedMesh;
+        let sceneLabels = { row: [], col: [], point: null, result: null };
 
-        function createTextSprite(text, color, pos) {
+        function createTextSprite(text, color, pos, hasBg = false) {
+            // Estimate width based on char count
+            const estWidth = Math.max(200, text.length * 15);
             const canvas = document.createElement('canvas');
-            canvas.width = 128;
-            canvas.height = 64;
+            canvas.width = estWidth; 
+            canvas.height = 80;
             const ctx = canvas.getContext('2d');
+            
+            if (hasBg) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+                ctx.beginPath();
+                ctx.roundRect(5, 10, estWidth-10, 60, 15);
+                ctx.fill();
+            }
+
             ctx.fillStyle = color;
-            ctx.font = 'bold 40px Arial';
+            ctx.font = 'bold 24px monospace'; 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, 64, 32);
+            ctx.fillText(text, estWidth/2, 40);
+            
             const texture = new THREE.CanvasTexture(canvas);
-            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
             sprite.position.copy(pos);
-            sprite.scale.set(4, 2, 1);
+            sprite.scale.set(estWidth/50, 1.6, 1);
+            sprite.renderOrder = 999; 
             return sprite;
         }
 
@@ -435,10 +457,10 @@
             while(labelsGroup.children.length) labelsGroup.remove(labelsGroup.children[0]);
             
             planes = []; vectors = []; parallelepipedMesh = null;
+            sceneLabels = { row: [], col: [], point: null, result: null };
             
-            // Adjust camera for 2D vs 3D
+            // Adjust camera
             if (currentDim === 2) {
-                // Top-down view for 2D
                 camera.position.set(0, 0, 30);
                 controls.target.set(0, 0, 0);
             } else {
@@ -447,12 +469,14 @@
             }
             controls.update();
 
-            // Labels
+            // Axis Labels
             labelsGroup.add(createTextSprite("U (x)", "#ffaaaa", new THREE.Vector3(11, 0, 0)));
             labelsGroup.add(createTextSprite("V (y)", "#aaffaa", new THREE.Vector3(0, 11, 0)));
             if (currentDim === 3) labelsGroup.add(createTextSprite("W (z)", "#aaaaff", new THREE.Vector3(0, 0, 11)));
 
             if (!solution.valid) return;
+
+            const colors = ['#ef4444', '#22c55e', '#3b82f6'];
 
             // --- ROW PICTURE ---
             if (currentDim === 3) {
@@ -464,53 +488,66 @@
                     
                     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), i==0?materials.p1:i==1?materials.p2:materials.p3);
                     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), normal.clone().normalize());
-                    mesh.position.copy(normal.clone().multiplyScalar(d/normal.lengthSq()));
+                    const centerPos = normal.clone().multiplyScalar(d/normal.lengthSq());
+                    mesh.position.copy(centerPos);
                     rowGroup.add(mesh);
                     planes.push(mesh);
+
+                    // Label
+                    const eqText = `${a}u ${b>=0?'+':''}${b}v ${c>=0?'+':''}${c}w = ${d}`;
+                    const labelPos = centerPos.clone().add(new THREE.Vector3(2, 2, 2)); 
+                    const lbl = createTextSprite(eqText, colors[i], labelPos, true);
+                    labelsGroup.add(lbl);
+                    sceneLabels.row.push(lbl);
                 });
             } else {
                 // 2D Lines
                 matrix.forEach((row, i) => {
                     const [a, b, d] = row;
-                    // Equation: ax + by = d. Draw segment within box [-15, 15]
                     const pts = [];
-                    // Check intersections with x=-15, x=15, y=-15, y=15
                     const box = 15;
-                    // If b != 0
                     if (Math.abs(b) > 0.001) {
-                        let y1 = (d - a * (-box)) / b;
-                        if (y1 >= -box && y1 <= box) pts.push(new THREE.Vector3(-box, y1, 0));
-                        let y2 = (d - a * (box)) / b;
-                        if (y2 >= -box && y2 <= box) pts.push(new THREE.Vector3(box, y2, 0));
+                        let y1 = (d - a * (-box)) / b; if (y1 >= -box && y1 <= box) pts.push(new THREE.Vector3(-box, y1, 0));
+                        let y2 = (d - a * (box)) / b; if (y2 >= -box && y2 <= box) pts.push(new THREE.Vector3(box, y2, 0));
                     }
-                    // If a != 0
                     if (Math.abs(a) > 0.001) {
-                        let x1 = (d - b * (-box)) / a;
-                        if (x1 >= -box && x1 <= box && pts.length < 2) pts.push(new THREE.Vector3(x1, -box, 0));
-                        let x2 = (d - b * (box)) / a;
-                        if (x2 >= -box && x2 <= box && pts.length < 2) pts.push(new THREE.Vector3(x2, box, 0));
+                        let x1 = (d - b * (-box)) / a; if (x1 >= -box && x1 <= box && pts.length < 2) pts.push(new THREE.Vector3(x1, -box, 0));
+                        let x2 = (d - b * (box)) / a; if (x2 >= -box && x2 <= box && pts.length < 2) pts.push(new THREE.Vector3(x2, box, 0));
                     }
 
                     if (pts.length >= 2) {
-                        // Make lines thicker by using thin cylinders instead
                         const path = new THREE.Vector3().subVectors(pts[1], pts[0]);
                         const len = path.length();
-                        // Reduced width: Changed radius from 0.15 to 0.05
                         const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, len, 8), i==0?materials.p1:materials.p2);
                         cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), path.normalize());
-                        cylinder.position.copy(new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5));
+                        const mid = new THREE.Vector3().addVectors(pts[0], pts[1]).multiplyScalar(0.5);
+                        cylinder.position.copy(mid);
                         cylinder.material = new THREE.MeshBasicMaterial({ color: i==0?0xff4444:0x44ff44 });
-                        
                         rowGroup.add(cylinder);
                         planes.push(cylinder);
+
+                        // Label
+                        const eqText = `${a}u ${b>=0?'+':''}${b}v = ${d}`;
+                        const lbl = createTextSprite(eqText, colors[i], mid.clone().add(new THREE.Vector3(0, 1, 0)), true);
+                        labelsGroup.add(lbl);
+                        sceneLabels.row.push(lbl);
                     }
                 });
             }
             
+            // Intersection Point Label
             intersectPoint = new THREE.Mesh(new THREE.SphereGeometry(0.4), materials.pt);
             intersectPoint.position.set(solution.u, solution.v, solution.w);
             intersectPoint.visible = false;
             rowGroup.add(intersectPoint);
+            
+            const ptText = currentDim === 3 
+                ? `(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}, ${solution.w.toFixed(1)})` 
+                : `(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)})`;
+            const ptLbl = createTextSprite(ptText, '#ffff00', intersectPoint.position.clone().add(new THREE.Vector3(0, -1.5, 0)), true);
+            ptLbl.visible = false;
+            labelsGroup.add(ptLbl);
+            sceneLabels.point = ptLbl;
 
             // --- COLUMN PICTURE ---
             const cols = [];
@@ -518,8 +555,6 @@
                 if (currentDim === 3) cols.push(new THREE.Vector3(matrix[0][j], matrix[1][j], matrix[2][j]));
                 else cols.push(new THREE.Vector3(matrix[0][j], matrix[1][j], 0));
             }
-            
-            const colors = [0xff4444, 0x44ff44, 0x4444ff];
             
             // Ghost vectors
             cols.forEach((v, i) => {
@@ -530,7 +565,7 @@
                 colGroup.add(arr);
             });
 
-            // Active Vectors - Precalculate full paths
+            // Active Vectors
             let currentStart = new THREE.Vector3();
             const scalars = [solution.u, solution.v, solution.w];
             
@@ -538,13 +573,24 @@
                 const full = v.clone().multiplyScalar(scalars[i]);
                 let dir = v.clone().normalize();
                 if (scalars[i] < 0) dir.negate();
-                
-                // If vector is zero length, just use default direction
                 if (full.lengthSq() < 0.0001) dir = new THREE.Vector3(1,0,0);
 
                 const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(), 0.001, colors[i], 0.4, 0.2);
                 colGroup.add(arrow);
                 vectors.push({ arrow, full, start: currentStart.clone() });
+                
+                // Detailed Label: (x,y,z) * scalar
+                // We'll update pos in animate, but create here
+                let coordStr = "";
+                if(currentDim === 3) coordStr = `[${v.x},${v.y},${v.z}]`;
+                else coordStr = `[${v.x},${v.y}]`;
+                
+                const lblText = `${coordStr} · ${scalars[i].toFixed(2)}`;
+                const lbl = createTextSprite(lblText, colors[i], new THREE.Vector3(), true);
+                lbl.visible = false;
+                labelsGroup.add(lbl);
+                sceneLabels.col.push(lbl);
+
                 currentStart.add(full);
             });
 
@@ -555,47 +601,38 @@
             finalVector = new THREE.ArrowHelper(target.clone().normalize(), new THREE.Vector3(), target.length(), 0xffff00, 0.6, 0.3);
             finalVector.visible = false;
             colGroup.add(finalVector);
+            
+            // Result Label
+            let bStr = currentDim === 3 ? `b=[${target.x},${target.y},${target.z}]` : `b=[${target.x},${target.y}]`;
+            const resLbl = createTextSprite(bStr, "#ffff00", target.clone(), true);
+            resLbl.visible = false;
+            labelsGroup.add(resLbl);
+            sceneLabels.result = resLbl;
 
-            // Solid Volume (Parallelepiped or Parallelogram)
+            // Volume
             if (vectors.length >= 2) {
                 const s1 = vectors[0].full;
                 const s2 = vectors[1].full;
-                
-                const positions = [];
-                const colorAttr = [];
-                const c1 = new THREE.Color(0xff4444), c2 = new THREE.Color(0x44ff44), c3 = new THREE.Color(0x4444ff);
-                const c0 = new THREE.Color(0x000000);
-                
+                const positions = []; const colorAttr = [];
+                const c1 = new THREE.Color(0xff4444), c2 = new THREE.Color(0x44ff44), c3 = new THREE.Color(0x4444ff), c0 = new THREE.Color(0x000000);
                 const pushTri = (va, ca, vb, cb, vc, cc) => {
-                    positions.push(va.x,va.y,va.z, vb.x,vb.y,vb.z, vc.x,vc.y,vc.z);
-                    colorAttr.push(ca.r,ca.g,ca.b, cb.r,cb.g,cb.b, cc.r,cc.g,cc.b);
+                    positions.push(va.x,va.y,va.z, vb.x,vb.y,vb.z, vc.x,vc.y,vc.z); colorAttr.push(ca.r,ca.g,ca.b, cb.r,cb.g,cb.b, cc.r,cc.g,cc.b);
                 };
-                
-                const pushQuad = (va, ca, vb, cb, vc, cc, vd, cd) => {
-                    pushTri(va,ca, vb,cb, vc,cc);
-                    pushTri(va,ca, vc,cc, vd,cd);
-                };
+                const pushQuad = (va, ca, vb, cb, vc, cc, vd, cd) => { pushTri(va,ca, vb,cb, vc,cc); pushTri(va,ca, vc,cc, vd,cd); };
 
                 if (currentDim === 3) {
                     const s3 = vectors[2].full;
                     const v0=new THREE.Vector3(), v1=s1, v2=s2, v3=s3;
                     const v4=s1.clone().add(s2), v5=s1.clone().add(s3), v6=s2.clone().add(s3), v7=s1.clone().add(s2).add(s3);
                     const c4=c1.clone().add(c2), c5=c1.clone().add(c3), c6=c2.clone().add(c3), c7=c4.clone().add(c3);
-                    
-                    pushQuad(v0,c0, v1,c1, v4,c4, v2,c2); 
-                    pushQuad(v3,c3, v5,c5, v7,c7, v6,c6);
-                    pushQuad(v0,c0, v2,c2, v6,c6, v3,c3);
-                    pushQuad(v1,c1, v5,c5, v7,c7, v4,c4);
-                    pushQuad(v0,c0, v1,c1, v5,c5, v3,c3);
-                    pushQuad(v2,c2, v4,c4, v7,c7, v6,c6);
+                    pushQuad(v0,c0, v1,c1, v4,c4, v2,c2); pushQuad(v3,c3, v5,c5, v7,c7, v6,c6);
+                    pushQuad(v0,c0, v2,c2, v6,c6, v3,c3); pushQuad(v1,c1, v5,c5, v7,c7, v4,c4);
+                    pushQuad(v0,c0, v1,c1, v5,c5, v3,c3); pushQuad(v2,c2, v4,c4, v7,c7, v6,c6);
                 } else {
-                    // 2D Parallelogram on Z=0
-                    // Vertices: 0, s1, s1+s2, s2
                     const v0=new THREE.Vector3(), v1=s1, v2=s1.clone().add(s2), v3=s2;
                     const c4=c1.clone().add(c2);
                     pushQuad(v0,c0, v1,c1, v2,c4, v3,c2);
                 }
-
                 const volGeom = new THREE.BufferGeometry();
                 volGeom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
                 volGeom.setAttribute('color', new THREE.Float32BufferAttribute(colorAttr, 3));
@@ -626,23 +663,41 @@
                 vectors.forEach(v => v.arrow.setLength(0.001));
                 finalVector.visible = false;
                 
+                // Hide all row labels
+                sceneLabels.row.forEach(l => l.visible = false);
+                if (sceneLabels.point) sceneLabels.point.visible = false;
+
                 for(let i=0; i<numSteps; i++) {
-                     // logic: vectors[i] grows from t = i*stepSize to (i+1)*stepSize
                      const tStart = i*stepSize;
                      const localT = Math.min(Math.max((t - tStart)/stepSize, 0), 1);
                      
                      if (localT > 0 && visibilityState.col[i]) {
                          vectors[i].arrow.setLength(Math.max(0.001, vectors[i].full.length()*localT));
-                         // Correct Logic: Use pre-calculated start position to avoid dependency on previous arrow's state
                          vectors[i].arrow.position.copy(vectors[i].start);
                          vectors[i].arrow.visible = true;
+                         
+                         // Update label pos to MIDPOINT
+                         if(sceneLabels.col[i]) {
+                             // Visibility Logic: Must be active, specific toggle on, AND global labels on
+                             sceneLabels.col[i].visible = visibilityState.col[i] && visibilityState.labels;
+                             // Calculate midpoint of CURRENT arrow length
+                             const currentTip = vectors[i].full.clone().multiplyScalar(localT);
+                             const midpoint = vectors[i].start.clone().add(currentTip.multiplyScalar(0.5));
+                             sceneLabels.col[i].position.copy(midpoint);
+                         }
                      } else {
                          vectors[i].arrow.visible = false;
+                         if(sceneLabels.col[i]) sceneLabels.col[i].visible = false;
                      }
                 }
 
-                if (t >= 1 && visibilityState.col[numSteps]) finalVector.visible = true;
-                else finalVector.visible = false;
+                if (t >= 1 && visibilityState.col[numSteps]) {
+                    finalVector.visible = true;
+                    if(sceneLabels.result) sceneLabels.result.visible = visibilityState.labels;
+                } else {
+                    finalVector.visible = false;
+                    if(sceneLabels.result) sceneLabels.result.visible = false;
+                }
 
                 if (parallelepipedMesh) {
                     parallelepipedMesh.visible = visibilityState.col[numSteps+1] && t >= 0.1;
@@ -653,19 +708,28 @@
                 document.getElementById('explanation-box').innerHTML = t>=1 ? "Result: Target vector <b class='text-yellow-400'>b</b> reached!" : `Step ${step}: Adding Column ${step}...`;
                 
             } else {
+                // Hide all col labels
+                sceneLabels.col.forEach(l => l.visible = false);
+                if (sceneLabels.result) sceneLabels.result.visible = false;
+
                 for(let i=0; i<numSteps; i++) {
                     const tStart = i*stepSize;
                     const localT = Math.min(Math.max((t - tStart)/stepSize, 0), 1);
                     if (visibilityState.row[i]) {
                         planes[i].visible = localT > 0;
                         if (currentDim === 3) planes[i].material.opacity = 0.3 * localT;
-                    } else planes[i].visible = false;
+                        if(sceneLabels.row[i]) sceneLabels.row[i].visible = (localT > 0) && visibilityState.labels;
+                    } else {
+                        planes[i].visible = false;
+                        if(sceneLabels.row[i]) sceneLabels.row[i].visible = false;
+                    }
                 }
                 
-                // Show point only if we are at the end and all planes are visible
                 let allRowVis = true;
                 for(let i=0; i<numSteps; i++) if(!visibilityState.row[i]) allRowVis=false;
-                intersectPoint.visible = (t > 0.9 && allRowVis);
+                const showPt = (t > 0.9 && allRowVis);
+                intersectPoint.visible = showPt;
+                if(sceneLabels.point) sceneLabels.point.visible = showPt && visibilityState.labels;
                 
                 const step = Math.min(Math.floor(t * numSteps) + 1, numSteps);
                 document.getElementById('explanation-box').innerHTML = t>=1 ? `Intersection at <b class='text-yellow-400'>(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}${currentDim===3?', '+solution.w.toFixed(1):''})</b>` : `Step ${step}: Showing Equation ${step}...`;
@@ -712,8 +776,23 @@
                 else txt = `${row[0]}u + ${row[1]}v = ${row[2]}`;
                 ctx.fillText(txt, 20, startY + (i*18));
             });
+            if (w > 400) {
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 16px sans-serif';
+                ctx.fillText("Solution:", w/2, h + 30);
+                ctx.font = 'bold 18px monospace';
+                ctx.fillStyle = solution.valid ? '#34d399' : '#ef4444';
+                let solTxt = "No Unique Solution";
+                if (solution.valid) {
+                    solTxt = currentDim === 3 
+                        ? `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)}, ${solution.w.toFixed(2)})` 
+                        : `(${solution.u.toFixed(2)}, ${solution.v.toFixed(2)})`;
+                }
+                ctx.fillText(solTxt, w/2, h + 55);
+            }
             const link = document.createElement('a');
-            link.download = `linear_system.png`;
+            const timestamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+            link.download = `linear_system_${timestamp}.png`;
             link.href = canvas.toDataURL('image/png');
             link.click();
         }

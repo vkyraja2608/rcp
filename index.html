@@ -351,7 +351,12 @@
                 for (let k = i + 1; k < n; k++) if (Math.abs(M[k][i]) > Math.abs(M[maxRow][i])) maxRow = k;
                 let tmp = M[i]; M[i] = M[maxRow]; M[maxRow] = tmp;
                 
-                if (Math.abs(M[i][i]) < 1e-10) { solution = { valid: false }; updateSolutionUI(); return; }
+                // If singular, set solution invalid but valid=false so we can still draw
+                if (Math.abs(M[i][i]) < 1e-10) { 
+                    solution = { u:0, v:0, w:0, valid: false }; 
+                    updateSolutionUI(); 
+                    return; 
+                }
                 
                 for (let k = i + 1; k < n; k++) {
                     let factor = M[k][i] / M[i][i];
@@ -474,8 +479,7 @@
             labelsGroup.add(createTextSprite("V (y)", "#aaffaa", new THREE.Vector3(0, 11, 0)));
             if (currentDim === 3) labelsGroup.add(createTextSprite("W (z)", "#aaaaff", new THREE.Vector3(0, 0, 11)));
 
-            if (!solution.valid) return;
-
+            // Draw visuals even if invalid, to show the singularity
             const colors = ['#ef4444', '#22c55e', '#3b82f6'];
 
             // --- ROW PICTURE ---
@@ -651,6 +655,10 @@
             if (isPlaying && solution.valid) {
                 animationTime = Math.min(animationTime + animationSpeed, 1.1);
                 updateScene(animationTime);
+            } else if (!solution.valid && isPlaying) {
+                // Keep animation running for valid parts (ghost vectors, planes)
+                animationTime = Math.min(animationTime + animationSpeed, 1.1);
+                updateScene(animationTime);
             }
             renderer.render(scene, camera);
         }
@@ -671,7 +679,7 @@
                      const tStart = i*stepSize;
                      const localT = Math.min(Math.max((t - tStart)/stepSize, 0), 1);
                      
-                     if (localT > 0 && visibilityState.col[i]) {
+                     if (localT > 0 && visibilityState.col[i] && solution.valid) {
                          vectors[i].arrow.setLength(Math.max(0.001, vectors[i].full.length()*localT));
                          vectors[i].arrow.position.copy(vectors[i].start);
                          vectors[i].arrow.visible = true;
@@ -705,7 +713,12 @@
                 }
                 
                 const step = Math.min(Math.floor(t * numSteps) + 1, numSteps);
-                document.getElementById('explanation-box').innerHTML = t>=1 ? "Result: Target vector <b class='text-yellow-400'>b</b> reached!" : `Step ${step}: Adding Column ${step}...`;
+                const expl = document.getElementById('explanation-box');
+                if (solution.valid) {
+                    expl.innerHTML = t>=1 ? "Result: Target vector <b class='text-yellow-400'>b</b> reached!" : `Step ${step}: Adding Column ${step}...`;
+                } else {
+                    expl.innerHTML = "<span class='text-red-400'>No unique linear combination found. Columns may be dependent.</span>";
+                }
                 
             } else {
                 // Hide all col labels
@@ -727,12 +740,17 @@
                 
                 let allRowVis = true;
                 for(let i=0; i<numSteps; i++) if(!visibilityState.row[i]) allRowVis=false;
-                const showPt = (t > 0.9 && allRowVis);
+                const showPt = (t > 0.9 && allRowVis && solution.valid);
                 intersectPoint.visible = showPt;
                 if(sceneLabels.point) sceneLabels.point.visible = showPt && visibilityState.labels;
                 
                 const step = Math.min(Math.floor(t * numSteps) + 1, numSteps);
-                document.getElementById('explanation-box').innerHTML = t>=1 ? `Intersection at <b class='text-yellow-400'>(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}${currentDim===3?', '+solution.w.toFixed(1):''})</b>` : `Step ${step}: Showing Equation ${step}...`;
+                const expl = document.getElementById('explanation-box');
+                if (solution.valid) {
+                    expl.innerHTML = t>=1 ? `Intersection at <b class='text-yellow-400'>(${solution.u.toFixed(1)}, ${solution.v.toFixed(1)}${currentDim===3?', '+solution.w.toFixed(1):''})</b>` : `Step ${step}: Showing Equation ${step}...`;
+                } else {
+                    expl.innerHTML = "<span class='text-red-400'>Planes do not intersect at a unique point.</span>";
+                }
             }
         }
 
